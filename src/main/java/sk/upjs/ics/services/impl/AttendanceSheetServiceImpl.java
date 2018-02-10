@@ -11,9 +11,9 @@ import javax.persistence.EntityManager;
 import javax.persistence.EntityNotFoundException;
 import javax.persistence.PersistenceContext;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -41,28 +41,24 @@ public class AttendanceSheetServiceImpl implements AttendanceSheetService {
                 || lectureId == null || dateTime == null)
             throw new IllegalArgumentException("Invalid attendance sheet to be persisted.");
 
-        Lecture lecture = em.getReference(Lecture.class, lectureId);
+        Lecture lecture = em.find(Lecture.class, lectureId);
 
-        try {
-            lecture.toString();
-        } catch (EntityNotFoundException exc) {
-            throw new EntityNotFoundException("Subject with ID: " + lectureId.toString() + " not found.");
-        }
+        if (lecture == null)
+            throw new EntityNotFoundException("Lecture with ID: " + lectureId.toString() + " not found.");
 
-         Set<Attendee> attendees = attendeesUUIDs
+        List<Attendee> attendees = em.createQuery("SELECT d FROM Attendee d WHERE d.id IN :ids", Attendee.class)
+                .setParameter("ids", attendeesUUIDs)
+                .getResultList();
+
+        List<UUID> entitiesNotFoundIds = attendeesUUIDs
                 .stream()
-                .map(id -> em.getReference(Attendee.class, id))
-                .collect(Collectors.toSet());
+                .filter(attendeeUUID -> attendees.stream().noneMatch(attendee -> attendee.getId().equals(attendeeUUID)))
+                .collect(Collectors.toList());
 
-        attendees.forEach(attendee -> {
-            try {
-                attendee.toString();
-            } catch (EntityNotFoundException exc) {
-                throw new EntityNotFoundException("Attendee with ID: " + attendee.getId() + " not found.");
-            }
-        });
+        if (!entitiesNotFoundIds.isEmpty())
+            throw new EntityNotFoundException("Attendees with IDs: " + entitiesNotFoundIds + " not found.");
 
-        AttendanceSheet attendanceSheet = new AttendanceSheet(dateTime, lecture, attendees);
+        AttendanceSheet attendanceSheet = new AttendanceSheet(dateTime, lecture, new HashSet<>(attendees));
         em.persist(attendanceSheet);
 
         return attendanceSheet.getId();
@@ -71,7 +67,7 @@ public class AttendanceSheetServiceImpl implements AttendanceSheetService {
     /**
      * Gets first and last name of registered attendees of specific attendance sheet
      * @param attendanceSheetId UUID of attendance sheet
-     * @return Map which key is first name and value is last name of
+     * @return Map which key is the first name and value the last name of
      *         registered attendees on attendance sheet
      */
     public Map<String, String> getFirstToLastName(UUID attendanceSheetId) {
@@ -79,7 +75,6 @@ public class AttendanceSheetServiceImpl implements AttendanceSheetService {
             throw new IllegalArgumentException("Invalid attendance sheet id.");
 
         AttendanceSheet attendanceSheet = em.find(AttendanceSheet.class, attendanceSheetId);
-
         if (attendanceSheet == null)
             throw new EntityNotFoundException("Attendance sheet with ID: " + attendanceSheetId.toString() + " not found.");
 

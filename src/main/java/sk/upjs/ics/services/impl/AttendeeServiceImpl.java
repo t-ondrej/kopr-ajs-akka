@@ -34,7 +34,6 @@ public class AttendeeServiceImpl implements AttendeeService {
             throw new IllegalArgumentException("Invalid attendee to be registered.");
 
         em.persist(attendee);
-
         return attendee.getId();
     }
 
